@@ -10,14 +10,16 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { AppConfig } from '../../types';
-import { configService } from '../../services/configService';
 
 interface ContactSectionProps {
   config: AppConfig;
   initialSubject?: string;
 }
 
-export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialSubject = '' }) => {
+export const ContactSection: React.FC<ContactSectionProps> = ({
+  config,
+  initialSubject = '',
+}) => {
   const { company, founder } = config;
 
   const [formData, setFormData] = useState({
@@ -27,65 +29,107 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
     company: '',
     subject: initialSubject || '',
     message: '',
-    honeypot: '', // anti-bot spam trap
+    honeypot: '',
   });
 
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [status, setStatus] = useState<
+    'idle' | 'submitting' | 'success' | 'error'
+  >('idle');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      company: '',
+      subject: '',
+      message: '',
+      honeypot: '',
+    });
+
+    setErrorMessage('');
+    setStatus('idle');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Client validation
+    setErrorMessage('');
+
     if (!formData.name.trim()) {
       setStatus('error');
       setErrorMessage('Please provide your name.');
       return;
     }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     if (!emailRegex.test(formData.email.trim())) {
       setStatus('error');
-      setErrorMessage('Please provide a valid corporate or personal email address.');
-      return;
-    }
-    if (!formData.message.trim() || formData.message.trim().length < 5) {
-      setStatus('error');
-      setErrorMessage('Please provide a descriptive message regarding your software inquiry.');
+      setErrorMessage(
+        'Please provide a valid corporate or personal email address.'
+      );
       return;
     }
 
-    // Honeypot spam check
+    if (!formData.message.trim() || formData.message.trim().length < 5) {
+      setStatus('error');
+      setErrorMessage(
+        'Please provide a descriptive message regarding your software inquiry.'
+      );
+      return;
+    }
+
+    // Honeypot spam protection
     if (formData.honeypot) {
       setStatus('success');
       return;
     }
 
     setStatus('submitting');
-    setErrorMessage('');
 
     try {
-      // 1. Dispatch to serverless / API endpoint
       const response = await fetch('/api/contact', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(formData),
       });
 
-      // Always save locally in admin database so directors can review inquiry immediately
-      configService.addMessage({
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        company: formData.company.trim(),
-        subject: formData.subject.trim() || 'Software Development Inquiry',
-        message: formData.message.trim(),
-      });
+      let result: {
+        success?: boolean;
+        error?: string;
+        message?: string;
+      } = {};
+
+      try {
+        result = await response.json();
+      } catch {
+        result = {};
+      }
+
+      if (!response.ok || result.success !== true) {
+        throw new Error(
+          result.error || 'Unable to send your inquiry. Please try again.'
+        );
+      }
 
       setStatus('success');
+
       setFormData({
         name: '',
         email: '',
@@ -95,51 +139,60 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
         message: '',
         honeypot: '',
       });
-    } catch {
-      // Even if network route to external server is unavailable in sandbox, save in message store
-      configService.addMessage({
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        company: formData.company.trim(),
-        subject: formData.subject.trim() || 'Software Development Inquiry',
-        message: formData.message.trim(),
-      });
+    } catch (error) {
+      console.error('Contact form error:', error);
 
-      setStatus('success');
+      setStatus('error');
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send your inquiry. Please try again.'
+      );
     }
   };
 
+  const whatsappMessage = encodeURIComponent(
+    'Hello Predhanexa team, I would like to inquire about software development services.'
+  );
+
   return (
-    <section id="contact" className="py-20 lg:py-28 bg-[#030712] relative">
+    <section
+      id="contact"
+      className="py-20 lg:py-28 bg-[#030712] relative"
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
-          {/* Left Column: Direct Communication Channels */}
+
+          {/* LEFT COLUMN */}
           <div className="lg:col-span-5 space-y-8">
+
             <div className="space-y-4">
               <div className="text-xs font-semibold text-cyan-400 tracking-wider uppercase">
                 Initiate Project Discussion
               </div>
-              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight font-display text-white text-balance">
+
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight font-display text-white">
                 Connect with Our Technical Leadership
               </h2>
+
               <p className="text-base text-slate-300 leading-relaxed">
-                Whether you need greenfield application development, dedicated software maintenance, or architectural modernization, our leadership team is directly reachable.
+                Whether you need greenfield application development,
+                dedicated software maintenance, or architectural
+                modernization, our leadership team is directly reachable.
               </p>
             </div>
 
-            {/* Direct Channel Buttons as requested */}
+            {/* DIRECT CHANNELS */}
             <div className="space-y-3 pt-2">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
                 Direct Channels
               </span>
 
-              {/* Founder WhatsApp */}
+              {/* WHATSAPP */}
               {founder.whatsapp && (
                 <a
-                  href={`https://wa.me/91${founder.whatsapp}?text=${encodeURIComponent(
-                    'Hello Predhanexa team, I would like to inquire about software development services.'
-                  )}`}
+                  href={`https://wa.me/91${founder.whatsapp}?text=${whatsappMessage}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-4 rounded-xl bg-emerald-950/20 border border-emerald-800/40 hover:border-emerald-500/60 transition-colors text-white group cursor-pointer"
@@ -148,18 +201,23 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     <div className="p-2.5 rounded-lg bg-emerald-900/60 text-emerald-400">
                       <MessageSquare className="w-5 h-5" />
                     </div>
+
                     <div>
-                      <div className="text-xs text-emerald-400 font-medium">Founder WhatsApp</div>
+                      <div className="text-xs text-emerald-400 font-medium">
+                        Founder WhatsApp
+                      </div>
+
                       <div className="text-sm font-semibold text-slate-100 font-mono">
                         +91 {founder.whatsapp}
                       </div>
                     </div>
                   </div>
+
                   <ArrowUpRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </a>
               )}
 
-              {/* Company Mobile Call */}
+              {/* COMPANY PHONE */}
               {company.phone && (
                 <a
                   href={`tel:${company.phone}`}
@@ -169,18 +227,23 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     <div className="p-2.5 rounded-lg bg-slate-800 text-cyan-400">
                       <Phone className="w-5 h-5" />
                     </div>
+
                     <div>
-                      <div className="text-xs text-slate-400 font-medium">Company Direct Line</div>
+                      <div className="text-xs text-slate-400 font-medium">
+                        Company Direct Line
+                      </div>
+
                       <div className="text-sm font-semibold text-slate-100 font-mono">
                         +91 {company.phone}
                       </div>
                     </div>
                   </div>
+
                   <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </a>
               )}
 
-              {/* Company Email */}
+              {/* COMPANY EMAIL */}
               {company.email && (
                 <a
                   href={`mailto:${company.email}?subject=Software%20Development%20Inquiry`}
@@ -190,18 +253,23 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     <div className="p-2.5 rounded-lg bg-slate-800 text-cyan-400">
                       <Mail className="w-5 h-5" />
                     </div>
+
                     <div>
-                      <div className="text-xs text-slate-400 font-medium">Company Inquiries</div>
+                      <div className="text-xs text-slate-400 font-medium">
+                        Company Inquiries
+                      </div>
+
                       <div className="text-sm font-semibold text-slate-100 font-mono">
                         {company.email}
                       </div>
                     </div>
                   </div>
+
                   <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </a>
               )}
 
-              {/* Founder Email */}
+              {/* FOUNDER EMAIL */}
               {founder.email && founder.email !== company.email && (
                 <a
                   href={`mailto:${founder.email}?subject=Executive%20Software%20Inquiry`}
@@ -211,57 +279,86 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     <div className="p-2.5 rounded-lg bg-slate-800 text-cyan-400">
                       <Mail className="w-5 h-5" />
                     </div>
+
                     <div>
-                      <div className="text-xs text-slate-400 font-medium">Founder Executive Email</div>
+                      <div className="text-xs text-slate-400 font-medium">
+                        Founder Executive Email
+                      </div>
+
                       <div className="text-sm font-semibold text-slate-100 font-mono">
                         {founder.email}
                       </div>
                     </div>
                   </div>
+
                   <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </a>
               )}
             </div>
 
+            {/* RESPONSE TIME */}
             <div className="p-4 rounded-xl bg-slate-900/30 border border-slate-800/80 flex items-center gap-3 text-xs text-slate-400">
               <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>Standard response window: Within 24 business hours.</span>
+
+              <span>
+                Standard response window: Within 24 business hours.
+              </span>
             </div>
           </div>
 
-          {/* Right Column: Structured Project Inquiry Form */}
+          {/* RIGHT COLUMN */}
           <div className="lg:col-span-7">
             <div className="p-8 sm:p-10 rounded-2xl bg-slate-900/50 border border-slate-800/90 shadow-2xl relative">
+
               <h3 className="text-xl sm:text-2xl font-bold text-white font-display mb-2">
                 Send Project Specification
               </h3>
+
               <p className="text-xs text-slate-400 mb-6">
-                All client conversations and project details are held strictly under mutual non-disclosure.
+                All client conversations and project details are held
+                strictly under mutual non-disclosure.
               </p>
 
+              {/* SUCCESS */}
               {status === 'success' ? (
-                <div className="p-8 rounded-xl bg-cyan-950/30 border border-cyan-500/40 text-center space-y-4 animate-in fade-in">
+                <div className="p-8 rounded-xl bg-cyan-950/30 border border-cyan-500/40 text-center space-y-4">
                   <div className="w-12 h-12 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center mx-auto">
                     <CheckCircle2 className="w-6 h-6" />
                   </div>
+
                   <h4 className="text-lg font-bold text-white font-display">
                     Inquiry Received Successfully
                   </h4>
+
                   <p className="text-sm text-slate-300 max-w-md mx-auto">
-                    Thank you for contacting Predhanexa Private Limited. Our engineering directors will evaluate your requirements and contact you via email or phone.
+                    Thank you for contacting Predhanexa Private Limited.
+                    Our engineering directors will evaluate your
+                    requirements and contact you via email or phone.
                   </p>
+
                   <button
-                    onClick={() => setStatus('idle')}
+                    type="button"
+                    onClick={resetForm}
                     className="px-5 py-2 text-xs font-semibold text-slate-900 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors cursor-pointer"
                   >
                     Send Another Message
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Spam honeypot */}
-                  <div className="hidden" aria-hidden="true">
-                    <label htmlFor="hp_field">Do not fill this</label>
+                <form
+                  onSubmit={handleSubmit}
+                  className="space-y-4"
+                >
+
+                  {/* HONEYPOT */}
+                  <div
+                    className="hidden"
+                    aria-hidden="true"
+                  >
+                    <label htmlFor="hp_field">
+                      Do not fill this
+                    </label>
+
                     <input
                       id="hp_field"
                       type="text"
@@ -273,11 +370,18 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     />
                   </div>
 
+                  {/* NAME + EMAIL */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300" htmlFor="name">
-                        Full Name <span className="text-cyan-400">*</span>
+                      <label
+                        className="text-xs font-medium text-slate-300"
+                        htmlFor="name"
+                      >
+                        Full Name{' '}
+                        <span className="text-cyan-400">*</span>
                       </label>
+
                       <input
                         id="name"
                         type="text"
@@ -291,9 +395,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300" htmlFor="email">
-                        Work / Personal Email <span className="text-cyan-400">*</span>
+                      <label
+                        className="text-xs font-medium text-slate-300"
+                        htmlFor="email"
+                      >
+                        Work / Personal Email{' '}
+                        <span className="text-cyan-400">*</span>
                       </label>
+
                       <input
                         id="email"
                         type="email"
@@ -305,13 +414,20 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                         className="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                       />
                     </div>
+
                   </div>
 
+                  {/* PHONE + COMPANY */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300" htmlFor="phone">
+                      <label
+                        className="text-xs font-medium text-slate-300"
+                        htmlFor="phone"
+                      >
                         Phone Number
                       </label>
+
                       <input
                         id="phone"
                         type="tel"
@@ -324,9 +440,13 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-300" htmlFor="company">
+                      <label
+                        className="text-xs font-medium text-slate-300"
+                        htmlFor="company"
+                      >
                         Company / Organization
                       </label>
+
                       <input
                         id="company"
                         type="text"
@@ -337,12 +457,18 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                         className="w-full px-4 py-2.5 rounded-lg bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all"
                       />
                     </div>
+
                   </div>
 
+                  {/* SUBJECT */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-300" htmlFor="subject">
+                    <label
+                      className="text-xs font-medium text-slate-300"
+                      htmlFor="subject"
+                    >
                       Subject / Service Area
                     </label>
+
                     <input
                       id="subject"
                       type="text"
@@ -354,10 +480,16 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     />
                   </div>
 
+                  {/* MESSAGE */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-300" htmlFor="message">
-                      Project Details / Technical Requirements <span className="text-cyan-400">*</span>
+                    <label
+                      className="text-xs font-medium text-slate-300"
+                      htmlFor="message"
+                    >
+                      Project Details / Technical Requirements{' '}
+                      <span className="text-cyan-400">*</span>
                     </label>
+
                     <textarea
                       id="message"
                       name="message"
@@ -370,31 +502,43 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ config, initialS
                     />
                   </div>
 
+                  {/* ERROR */}
                   {status === 'error' && (
                     <div className="p-3 rounded-lg bg-red-950/40 border border-red-700/50 flex items-center gap-2.5 text-xs text-red-300">
                       <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                      <span>{errorMessage}</span>
+
+                      <span>
+                        {errorMessage}
+                      </span>
                     </div>
                   )}
 
+                  {/* SUBMIT */}
                   <button
                     type="submit"
                     disabled={status === 'submitting'}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3 text-sm font-semibold text-slate-900 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded-lg transition-colors shadow-lg shadow-cyan-950/40 cursor-pointer"
                   >
                     {status === 'submitting' ? (
-                      <span>Transmitting Inquiry...</span>
+                      <span>
+                        Transmitting Inquiry...
+                      </span>
                     ) : (
                       <>
-                        <span>Send Message</span>
+                        <span>
+                          Send Message
+                        </span>
+
                         <Send className="w-4 h-4" />
                       </>
                     )}
                   </button>
+
                 </form>
               )}
             </div>
           </div>
+
         </div>
       </div>
     </section>
