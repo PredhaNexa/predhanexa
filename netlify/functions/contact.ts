@@ -32,14 +32,20 @@ const jsonResponse = (
 export const handler = async (
   event: NetlifyEvent
 ): Promise<NetlifyResponse> => {
-  // Handle browser preflight
+  // ---------------------------------------------
+  // OPTIONS / CORS
+  // ---------------------------------------------
+
   if (event.httpMethod === 'OPTIONS') {
     return jsonResponse(200, {
       success: true,
     });
   }
 
-  // Only POST is allowed
+  // ---------------------------------------------
+  // ONLY POST
+  // ---------------------------------------------
+
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, {
       success: false,
@@ -48,62 +54,56 @@ export const handler = async (
   }
 
   try {
-    /*
-     * ============================================================
-     * ENVIRONMENT VARIABLES
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // SERVER ENVIRONMENT VARIABLES
+    // ---------------------------------------------
 
-    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+
     const supabaseServiceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
     const smtpHost =
-      process.env.SMTP_HOST || 'smtp.gmail.com';
+      process.env.SMTP_HOST?.trim();
 
-    const smtpPort = Number(
-      process.env.SMTP_PORT || '587'
-    );
+    const smtpPort =
+      Number(process.env.SMTP_PORT || '587');
 
     const smtpUsername =
-      process.env.SMTP_USERNAME;
+      process.env.SMTP_USERNAME?.trim();
 
     const smtpPassword =
-      process.env.SMTP_PASSWORD;
+      process.env.SMTP_PASSWORD?.trim();
+
+    const smtpSecure =
+      String(process.env.SMTP_SECURE || 'false')
+        .trim()
+        .toLowerCase() === 'true';
 
     const fromEmail =
-      process.env.FROM_EMAIL ||
-      smtpUsername;
+      process.env.FROM_EMAIL?.trim();
 
     const contactEmail =
-      process.env.CONTACT_EMAIL ||
-      'predhanexa@gmail.com';
+      process.env.CONTACT_EMAIL?.trim();
 
     const founderEmail =
-      process.env.FOUNDER_EMAIL ||
-      'naragantiumadevi@gmail.com';
+      process.env.FOUNDER_EMAIL?.trim();
 
-    /*
-     * ============================================================
-     * ENVIRONMENT VALIDATION
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // ENVIRONMENT VALIDATION
+    // ---------------------------------------------
 
     if (!supabaseUrl) {
-      console.error(
-        '[Contact] Missing SUPABASE_URL'
-      );
+      console.error('[Contact] Missing SUPABASE_URL');
 
       return jsonResponse(500, {
         success: false,
-        error: 'Server configuration error: SUPABASE_URL is missing.',
+        error: 'Server configuration error: Supabase URL is missing.',
       });
     }
 
     if (!supabaseServiceRoleKey) {
-      console.error(
-        '[Contact] Missing SUPABASE_SERVICE_ROLE_KEY'
-      );
+      console.error('[Contact] Missing SUPABASE_SERVICE_ROLE_KEY');
 
       return jsonResponse(500, {
         success: false,
@@ -112,23 +112,47 @@ export const handler = async (
       });
     }
 
+    if (!smtpHost) {
+      console.error('[Contact] Missing SMTP_HOST');
+
+      return jsonResponse(500, {
+        success: false,
+        error: 'Server email configuration is incomplete.',
+      });
+    }
+
     if (!smtpUsername || !smtpPassword) {
+      console.error('[Contact] Missing SMTP credentials');
+
+      return jsonResponse(500, {
+        success: false,
+        error: 'Server email configuration is incomplete.',
+      });
+    }
+
+    if (!fromEmail) {
+      console.error('[Contact] Missing FROM_EMAIL');
+
+      return jsonResponse(500, {
+        success: false,
+        error: 'Server sender email is not configured.',
+      });
+    }
+
+    if (!contactEmail && !founderEmail) {
       console.error(
-        '[Contact] SMTP credentials are missing'
+        '[Contact] Neither CONTACT_EMAIL nor FOUNDER_EMAIL is configured'
       );
 
       return jsonResponse(500, {
         success: false,
-        error:
-          'Server email configuration is incomplete.',
+        error: 'Server recipient email is not configured.',
       });
     }
 
-    /*
-     * ============================================================
-     * PARSE REQUEST
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // PARSE REQUEST
+    // ---------------------------------------------
 
     let body: Record<string, unknown>;
 
@@ -140,6 +164,10 @@ export const handler = async (
         error: 'Invalid JSON request.',
       });
     }
+
+    // ---------------------------------------------
+    // READ FORM DATA
+    // ---------------------------------------------
 
     const name =
       typeof body.name === 'string'
@@ -176,11 +204,9 @@ export const handler = async (
         ? body.honeypot.trim()
         : '';
 
-    /*
-     * ============================================================
-     * HONEYPOT SPAM PROTECTION
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // HONEYPOT SPAM PROTECTION
+    // ---------------------------------------------
 
     if (honeypot) {
       return jsonResponse(200, {
@@ -189,11 +215,9 @@ export const handler = async (
       });
     }
 
-    /*
-     * ============================================================
-     * VALIDATION
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // VALIDATION
+    // ---------------------------------------------
 
     if (!name) {
       return jsonResponse(400, {
@@ -220,14 +244,9 @@ export const handler = async (
       });
     }
 
-    /*
-     * ============================================================
-     * SUPABASE CLIENT
-     *
-     * SERVICE ROLE KEY MUST NEVER BE USED IN FRONTEND CODE.
-     * It is safe here because this is a Netlify server function.
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // SUPABASE CLIENT
+    // ---------------------------------------------
 
     const supabase = createClient(
       supabaseUrl,
@@ -240,27 +259,29 @@ export const handler = async (
       }
     );
 
-    /*
-     * ============================================================
-     * SAVE CONTACT MESSAGE TO SUPABASE
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // SAVE MESSAGE TO SUPABASE
+    // ---------------------------------------------
 
-    const { data: savedMessage, error: databaseError } =
-      await supabase
-        .from('contact_messages')
-        .insert({
-          name,
-          email,
-          phone: phone || null,
-          company: company || null,
-          subject:
-            subject || 'Software Development Inquiry',
-          message,
-          is_read: false,
-        })
-        .select()
-        .single();
+    const finalSubject =
+      subject || 'Software Development Inquiry';
+
+    const {
+      data: savedMessage,
+      error: databaseError,
+    } = await supabase
+      .from('contact_messages')
+      .insert({
+        name,
+        email,
+        phone: phone || null,
+        company: company || null,
+        subject: finalSubject,
+        message,
+        is_read: false,
+      })
+      .select()
+      .single();
 
     if (databaseError) {
       console.error(
@@ -280,41 +301,60 @@ export const handler = async (
       savedMessage?.id
     );
 
-    /*
-     * ============================================================
-     * CREATE SMTP TRANSPORTER
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // CREATE SMTP TRANSPORTER
+    // ---------------------------------------------
 
     const transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure:
-        String(process.env.SMTP_SECURE).toLowerCase() ===
-        'true',
+      secure: smtpSecure,
       auth: {
         user: smtpUsername,
         pass: smtpPassword,
       },
     });
 
-    /*
-     * ============================================================
-     * EMAIL CONTENT
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // VERIFY SMTP CONNECTION
+    // ---------------------------------------------
 
-    const emailSubject =
-      subject || 'New Software Development Inquiry';
+    try {
+      await transporter.verify();
+
+      console.info(
+        '[Contact] SMTP connection verified successfully'
+      );
+    } catch (smtpVerifyError) {
+      console.error(
+        '[Contact] SMTP verification failed:',
+        smtpVerifyError
+      );
+
+      // IMPORTANT:
+      // The enquiry is already safely stored in Supabase.
+      // Do not delete it just because email failed.
+
+      return jsonResponse(500, {
+        success: false,
+        error:
+          'Your enquiry was saved, but the notification email could not be sent.',
+        id: savedMessage?.id,
+      });
+    }
+
+    // ---------------------------------------------
+    // EMAIL CONTENT
+    // ---------------------------------------------
 
     const emailText = `
-New enquiry received from Predhanexa website.
+New website enquiry received.
 
 Name: ${name}
 Email: ${email}
 Phone: ${phone || 'Not provided'}
 Company: ${company || 'Not provided'}
-Subject: ${emailSubject}
+Subject: ${finalSubject}
 
 Message:
 ${message}
@@ -328,45 +368,83 @@ ${savedMessage?.id || 'N/A'}
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>New Predhanexa Enquiry</title>
+  <title>New Website Enquiry</title>
 </head>
 
-<body style="font-family: Arial, sans-serif; background:#f5f7fa; padding:30px;">
-
-  <div style="
-    max-width:700px;
-    margin:auto;
-    background:white;
-    border-radius:12px;
+<body
+  style="
+    margin:0;
     padding:30px;
-    border:1px solid #e5e7eb;
-  ">
+    background:#f5f7fa;
+    font-family:Arial,Helvetica,sans-serif;
+  "
+>
 
-    <h2 style="margin-top:0;color:#111827;">
+  <div
+    style="
+      max-width:700px;
+      margin:0 auto;
+      background:#ffffff;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:30px;
+    "
+  >
+
+    <h2
+      style="
+        margin-top:0;
+        color:#111827;
+      "
+    >
       New Website Enquiry
     </h2>
 
     <p style="color:#4b5563;">
-      A new project enquiry was submitted through the Predhanexa website.
+      A new project enquiry was submitted through the company website.
     </p>
 
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+    <hr
+      style="
+        border:none;
+        border-top:1px solid #e5e7eb;
+        margin:20px 0;
+      "
+    >
 
-    <table style="width:100%;border-collapse:collapse;">
+    <table
+      style="
+        width:100%;
+        border-collapse:collapse;
+      "
+    >
 
       <tr>
-        <td style="padding:8px 0;font-weight:bold;width:140px;">
+        <td
+          style="
+            padding:8px 0;
+            font-weight:bold;
+            width:150px;
+          "
+        >
           Name
         </td>
+
         <td style="padding:8px 0;">
           ${name}
         </td>
       </tr>
 
       <tr>
-        <td style="padding:8px 0;font-weight:bold;">
+        <td
+          style="
+            padding:8px 0;
+            font-weight:bold;
+          "
+        >
           Email
         </td>
+
         <td style="padding:8px 0;">
           <a href="mailto:${email}">
             ${email}
@@ -375,56 +453,86 @@ ${savedMessage?.id || 'N/A'}
       </tr>
 
       <tr>
-        <td style="padding:8px 0;font-weight:bold;">
+        <td
+          style="
+            padding:8px 0;
+            font-weight:bold;
+          "
+        >
           Phone
         </td>
+
         <td style="padding:8px 0;">
           ${phone || 'Not provided'}
         </td>
       </tr>
 
       <tr>
-        <td style="padding:8px 0;font-weight:bold;">
+        <td
+          style="
+            padding:8px 0;
+            font-weight:bold;
+          "
+        >
           Company
         </td>
+
         <td style="padding:8px 0;">
           ${company || 'Not provided'}
         </td>
       </tr>
 
       <tr>
-        <td style="padding:8px 0;font-weight:bold;">
+        <td
+          style="
+            padding:8px 0;
+            font-weight:bold;
+          "
+        >
           Subject
         </td>
+
         <td style="padding:8px 0;">
-          ${emailSubject}
+          ${finalSubject}
         </td>
       </tr>
 
     </table>
 
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+    <hr
+      style="
+        border:none;
+        border-top:1px solid #e5e7eb;
+        margin:20px 0;
+      "
+    >
 
     <h3 style="color:#111827;">
-      Project Details
+      Message
     </h3>
 
-    <div style="
-      background:#f9fafb;
-      padding:16px;
-      border-radius:8px;
-      white-space:pre-wrap;
-      color:#374151;
-    ">
-${message}
+    <div
+      style="
+        background:#f9fafb;
+        border:1px solid #e5e7eb;
+        border-radius:8px;
+        padding:16px;
+        color:#374151;
+        white-space:pre-wrap;
+      "
+    >
+      ${message}
     </div>
 
-    <p style="
-      margin-top:25px;
-      color:#9ca3af;
-      font-size:12px;
-    ">
-      Supabase message ID: ${savedMessage?.id || 'N/A'}
+    <p
+      style="
+        margin-top:25px;
+        font-size:12px;
+        color:#9ca3af;
+      "
+    >
+      Database Message ID:
+      ${savedMessage?.id || 'N/A'}
     </p>
 
   </div>
@@ -433,57 +541,69 @@ ${message}
 </html>
 `;
 
-    /*
-     * ============================================================
-     * SEND EMAIL
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // BUILD RECIPIENT LIST
+    // ---------------------------------------------
+
+    const recipients = [
+      contactEmail,
+      founderEmail,
+    ]
+      .filter(
+        (value): value is string =>
+          Boolean(value)
+      )
+      .filter(
+        (value, index, array) =>
+          array.indexOf(value) === index
+      );
+
+    // ---------------------------------------------
+    // SEND EMAIL
+    // ---------------------------------------------
 
     try {
-      await transporter.sendMail({
-        from: `"Predhanexa Website" <${fromEmail}>`,
-        to: contactEmail,
-        cc: founderEmail || undefined,
-        replyTo: email,
-        subject: `New Website Enquiry: ${emailSubject}`,
-        text: emailText,
-        html: emailHtml,
-      });
+      const mailResult =
+        await transporter.sendMail({
+          from: `"Website Enquiries" <${fromEmail}>`,
+          to: recipients.join(', '),
+          replyTo: email,
+          subject: `New Website Enquiry: ${finalSubject}`,
+          text: emailText,
+          html: emailHtml,
+        });
 
       console.info(
-        '[Contact] Notification email sent successfully.'
+        '[Contact] Email sent successfully:',
+        mailResult.messageId
       );
-    } catch (emailError) {
-      /*
-       * IMPORTANT:
-       * The enquiry is already safely stored in Supabase.
-       * Therefore an email failure should NOT delete the enquiry.
-       */
 
+    } catch (emailError) {
       console.error(
         '[Contact] Email sending failed:',
         emailError
       );
 
+      // The database record remains safe.
       return jsonResponse(500, {
         success: false,
         error:
-          'Your enquiry was saved, but the notification email could not be sent. Please contact us directly.',
+          'Your enquiry was saved, but the notification email could not be sent.',
+        id: savedMessage?.id,
       });
     }
 
-    /*
-     * ============================================================
-     * SUCCESS
-     * ============================================================
-     */
+    // ---------------------------------------------
+    // SUCCESS
+    // ---------------------------------------------
 
     return jsonResponse(200, {
       success: true,
       message:
-        'Your enquiry has been received successfully.',
-      id: savedMessage?.id || null,
+        'Your enquiry has been successfully submitted.',
+      id: savedMessage?.id,
     });
+
   } catch (error) {
     console.error(
       '[Contact] Unexpected server error:',
